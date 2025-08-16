@@ -1,61 +1,97 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms, models
 import os
 
-# Device config
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# --- Data Preparation ---
+data_transforms = {
+    'Training': transforms.Compose([
+        transforms.RandomRotation(10),
+        transforms.RandomHorizontalFlip(),
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ]),
+    'Testing': transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ]),
+}
 
-# Data transforms
-train_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
-])
+data_dir = 'data'
+image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x])
+                  for x in ['Training', 'Testing']}
+dataloaders = {x: DataLoader(image_datasets[x], batch_size=32, shuffle=True, num_workers=2)
+               for x in ['Training', 'Testing']}
+dataset_sizes = {x: len(image_datasets[x]) for x in ['Training', 'Testing']}
+class_names = image_datasets['Training'].classes
 
-test_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
-])
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# Load dataset (assumes Kaggle dataset folder structure)
-train_data = datasets.ImageFolder("data/Training", transform=train_transform)
-test_data = datasets.ImageFolder("data/Testing", transform=test_transform)
-
-train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=32, shuffle=False)
-
-# Model: ResNet18
-model = models.resnet18(weights=None)
-num_features = model.fc.in_features
-model.fc = nn.Linear(num_features, 2)  # 2 classes: yes/no tumour
+# --- Model Setup ---
+model = models.resnet18(weights='IMAGENET1K_V1')
+num_ftrs = model.fc.in_features
+model.fc = nn.Linear(num_ftrs, len(class_names))
 model = model.to(device)
 
-# Loss and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
-# Training loop
-num_epochs = 20
+# --- Training Loop ---
+num_epochs = 15
+history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+
 for epoch in range(num_epochs):
-    model.train()
-    running_loss = 0.0
-    for images, labels in train_loader:
-        images, labels = images.to(device), labels.to(device)
+    print(f'Epoch {epoch+1}/{num_epochs}')
+    print('-' * 10)
 
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
+    for phase in ['Training', 'Testing']:
+        if phase == 'Training':
+            model.train()
+        else:
+            model.eval()
 
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
+        running_loss = 0.0
+        running_corrects = 0
 
-# Save model
+        for inputs, labels in dataloaders[phase]:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+
+            with torch.set_grad_enabled(phase == 'Training'):
+                outputs = model(inputs)
+                _, preds = torch.max(outputs, 1)
+                loss = criterion(outputs, labels)
+
+                if phase == 'Training':
+                    loss.backward()
+                    optimizer.step()
+
+            running_loss += loss.item() * inputs.size(0)
+            running_corrects += torch.sum(preds == labels.data)
+
+        epoch_loss = running_loss / dataset_sizes[phase]
+        epoch_acc = running_corrects.double() / dataset_sizes[phase]
+
+        print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
+        
+        if phase == 'Training':
+            history['train_loss'].append(epoch_loss)
+            history['train_acc'].append(epoch_acc.item())
+        else:
+            history['val_loss'].append(epoch_loss)
+            history['val_acc'].append(epoch_acc.item())
+
+
+print("\n✅ Training complete.")
+
+# --- Save Model and History ---
 os.makedirs("model", exist_ok=True)
-torch.save(model.state_dict(), "model/resnet18_brain_tumor.pt")
-print("Model saved to model/resnet18_brain_tumor.pt")
+torch.save(model.state_dict(), 'model/resnet18_brain_tumor.pt')
+torch.save(history, 'model/training_history.pt') # Save history object
+print("✅ Model and training history saved to 'model/' directory.")
