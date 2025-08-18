@@ -1,23 +1,18 @@
+*Brain Tumor Classification with PyTorch and ResNet18*
+This project provides a deep learning solution for classifying brain MRI scans. It utilizes a pre-trained ResNet18 model to determine whether an MRI image indicates the presence of a brain tumor. Model interpretability is enhanced with Grad-CAM, which generates heatmaps to highlight the areas in an image that most influence the model's prediction.
 
-# Brain Tumour Detection using CNN / ResNet18
+*Key Features*
+Accurate Classification: Distinguishes between MRIs with and without brain tumors.
+Transfer Learning: Built upon a ResNet18 model pre-trained on ImageNet for robust feature extraction.
+Model Interpretability: Implements Grad-CAM to visualize the model's decision-making process.
+Complete Workflow: Includes scripts for training, evaluation, and prediction on new images.
+Dataset
+This model is trained on the Brain MRI Images for Brain Tumor Detection dataset from Kaggle.
 
-This project uses deep learning to classify brain MRI scans into:
-- **Has Brain Tumour**
-- **Doesn't have Brain Tumour**
+*Project Goals*
+Train a robust ResNet18 model on the Kaggle Brain MRI dataset.
+Evaluate model performance using accuracy, loss, and a confusion matrix.
+Save the model weights for easy inference and deployment.
+Visualize model predictions using Grad-CAM to ensure reliability.
 
-## Goals
-- Train a ResNet18 model on the Kaggle Brain MRI dataset.
-- Evaluate accuracy, loss, and predictions.
-- Save model weights for later inference.
-- Provide a simple script (`predict.py`) to test on new MRI images.
-
-## Dataset
-We use the Kaggle dataset:  
-[Brain MRI Images for Brain Tumor Detection](https://www.kaggle.com/datasets/navoneel/brain-mri-images-for-brain-tumor-detection)
-
-## How to Run
-1. Train the model in Google Colab using `train.py`.
-2. Save the trained model to `model/resnet18_brain_tumor.pt`.
-3. Run `predict.py` with any MRI image:
-   ```bash
-   python predict.py --image your_image.jpg
+You can download the dataset here : https://www.kaggle.com/datasets/navoneel/brain-mri-images-for-brain-tumor-detection
