@@ -1,3 +1,10 @@
+'''
+Loads your trained ResNet18 model.
+Shows training history (if available).
+Evaluates on test set with classification report + confusion matrix.
+Displays Grad-CAM heatmaps for a few MRI test images.'''
+
+%%writefile evaluate.py
 import torch
 import torch.nn as nn
 from torchvision import transforms, models, datasets
@@ -6,7 +13,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
-import pandas as pd
 import argparse
 import os
 from PIL import Image
@@ -41,8 +47,9 @@ def plot_metrics(history):
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig('model/training_metrics.png')
-    print("✅ Training metrics plot saved to model/training_metrics.png")
+    # Instead of saving, we display the plot
+    plt.show()
+    print("✅ Training metrics plot displayed above.")
 
 def evaluate_model(model, test_loader, device):
     """Evaluates the model on the test set and prints a classification report."""
@@ -68,35 +75,60 @@ def evaluate_model(model, test_loader, device):
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
     plt.title('Confusion Matrix')
-    plt.savefig('model/confusion_matrix.png')
-    print("✅ Confusion matrix saved to model/confusion_matrix.png")
+    # Instead of saving, we display the plot
+    plt.show()
+    print("✅ Confusion matrix displayed above.")
 
 
 def generate_grad_cam(model, target_layer, test_loader, device, num_images=4):
-    """Generates and saves Grad-CAM heatmaps for a few test images."""
-    cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=(device.type == 'cuda'))
-    
-    os.makedirs("grad_cam_examples", exist_ok=True)
+    """Generates and displays Grad-CAM heatmaps for a few test images."""
+    cam = GradCAM(model=model, target_layers=[target_layer])
 
-    for i, (inputs, labels) in enumerate(test_loader):
-        if i >= num_images:
+    # Setup for plotting in a grid
+    fig, axes = plt.subplots(1, num_images, figsize=(15, 5))
+    if num_images == 1:
+        axes = [axes]
+    fig.suptitle('Grad-CAM Heatmaps', fontsize=16)
+
+    images_shown = 0
+    data_iter = iter(test_loader)
+
+    while images_shown < num_images:
+        try:
+            inputs, labels = next(data_iter)
+            input_img, label = inputs[0], labels[0]
+        except StopIteration:
             break
-        
-        input_tensor = inputs[0:1].to(device) # Get the first image
-        rgb_img = inputs[0].permute(1, 2, 0).numpy()
-        rgb_img = (rgb_img - np.min(rgb_img)) / (np.max(rgb_img) - np.min(rgb_img)) # Normalize to 0-1 for visualization
 
-        targets = [ClassifierOutputTarget(labels[0].item())]
+        input_tensor = input_img.unsqueeze(0).to(device)
+
+        model.eval()
+        with torch.no_grad():
+            output = model(input_tensor)
+            _, pred_idx = torch.max(output, 1)
+            predicted_class = test_loader.dataset.classes[pred_idx.item()]
+            actual_class = test_loader.dataset.classes[label.item()]
+
+        rgb_img = input_img.permute(1, 2, 0).numpy()
+        rgb_img = (rgb_img - np.min(rgb_img)) / (np.max(rgb_img) - np.min(rgb_img))
+
+        targets = [ClassifierOutputTarget(label.item())]
         grayscale_cam = cam(input_tensor=input_tensor, targets=targets)
         grayscale_cam = grayscale_cam[0, :]
-        
-        visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
-        
-        # Save the image
-        img = Image.fromarray(visualization)
-        img.save(f"grad_cam_examples/example_{i+1}_label_{test_loader.dataset.classes[labels[0].item()]}.png")
 
-    print(f"✅ Grad-CAM heatmaps saved to the 'grad_cam_examples/' directory.")
+        visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
+
+        # Displaying the image in its subplot
+        ax = axes[images_shown]
+        ax.imshow(visualization)
+        ax.set_title(f"Actual: {actual_class}\nPredicted: {predicted_class}")
+        ax.axis('off')
+        images_shown += 1
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # Display the entire figure with all subplots
+    plt.show()
+    print(f"✅ Grad-CAM heatmaps displayed above.")
 
 
 if __name__ == '__main__':
@@ -106,21 +138,18 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load the model
     model = models.resnet18(weights=None)
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, 2)
     model.load_state_dict(torch.load(args.model_path, map_location=device))
     model = model.to(device)
-    
-    # Load training history (assuming it's saved during training)
+
     try:
         history = torch.load('model/training_history.pt')
         plot_metrics(history)
     except FileNotFoundError:
         print("Could not find 'model/training_history.pt'. Skipping metrics plot.")
 
-    # Prepare the test dataset
     test_transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -129,9 +158,7 @@ if __name__ == '__main__':
     test_dataset = datasets.ImageFolder('data/Testing', transform=test_transform)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-    # Run evaluation
     evaluate_model(model, test_loader, device)
-    
-    # Generate Grad-CAM
-    target_layer = model.layer4[-1] # Target the last conv block of ResNet18
+
+    target_layer = model.layer4[-1]
     generate_grad_cam(model, target_layer, test_loader, device)
