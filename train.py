@@ -1,3 +1,10 @@
+#Prepares MRI dataset
+#Loads ResNet18 pretrained model
+#Fine-tunes it for 2 classes
+#Trains for 15 epochs, records accuracy & loss
+#Saves both model and metrics history
+
+%%writefile train.py
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -79,7 +86,7 @@ for epoch in range(num_epochs):
         epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
         print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
-        
+
         if phase == 'Training':
             history['train_loss'].append(epoch_loss)
             history['train_acc'].append(epoch_acc.item())
